@@ -15,7 +15,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ECM_FIND_MODULE_DIR})
 find_package(WaylandScanner REQUIRED)
 
 ecm_add_wayland_client_protocol(WL_PROT_SRC
-    PROTOCOL protocol/xdg-shell.xml
+    PROTOCOL /usr/share/wayland-protocols/unstable/xdg-shell/xdg-shell-unstable-v5.xml
     BASENAME xdg-shell)
 
 message("protocol header: " ${WL_PROT_SRC})
