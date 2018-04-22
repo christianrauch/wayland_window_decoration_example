@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(wayland_window_decoration_example)
 
+set(CMAKE_CXX_STANDARD 11)
+
 find_package(PkgConfig)
 pkg_check_modules(wayland-client REQUIRED wayland-client)
 pkg_check_modules(wayland-egl REQUIRED wayland-egl)
