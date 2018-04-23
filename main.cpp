@@ -53,21 +53,23 @@ struct decoration {
     int posx, posy;
     int width, height;
 
-    enum Function {
-        MOVE,
-        RESIZE_LEFT,
-        RESIZE_TOP,
-        RESIZE_RIGHT,
-        RESIZE_BUTTOM,
-        RESIZE_UPPERLEFT,
-        RESIZE_UPPERRIGHT,
-        RESIZE_LOWERRIGHT,
-        RESIZE_LOWERLEFT,
-    } function;
+//    enum Function {
+//        MOVE,
+//        RESIZE_LEFT,
+//        RESIZE_TOP,
+//        RESIZE_RIGHT,
+//        RESIZE_BUTTOM,
+//        RESIZE_UPPERLEFT,
+//        RESIZE_UPPERRIGHT,
+//        RESIZE_LOWERRIGHT,
+//        RESIZE_LOWERLEFT,
+//    } function;
+
+    enum wl_shell_surface_resize function;
 
     decoration(wl_compositor* compositor, wl_subcompositor* subcompositor, wl_surface* source,
               const int x, const int y, const int w, const int h,
-              EGLConfig config, Function type)
+              EGLConfig config, enum wl_shell_surface_resize type)
     {
         function = type;
         posx = x;
@@ -92,7 +94,7 @@ struct decoration {
     }
 
     void activate() {
-        eglMakeCurrent (egl_display, egl_surface, egl_surface, egl_context);
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
     }
 
     void swap() {
@@ -128,45 +130,45 @@ static void pointer_motion (void *data, struct wl_pointer *pointer, uint32_t tim
     const int dx = wl_fixed_to_int(curx - w->lastx);
     const int dy = wl_fixed_to_int(cury - w->lasty);
 
-    if(dx==0 && dy==0)
-        return;
+//    if(dx==0 && dy==0)
+//        return;
 
-    if(w->button_pressed) {
-        if(!w->inhibit_motion) {
-            for(int i = 0; i<w->decorations.size(); i++) {
-                auto &d = w->decorations[i];
-                if(d.surface==w->current_surface) {
-                    std::cout << "old: " << w->lastx << " " << w->lasty << std::endl;
-                    std::cout << "new: " << curx << " " << cury << std::endl;
-                    std::cout << "resizing: " << dx << " " << dy << std::endl;
-                    switch(w->decorations[i].function) {
-                    case decoration::RESIZE_LEFT:
-                        w->width -= dx;
-                        d.reposition(dx, 0);
-                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
-                        w->inhibit_motion = true;
-                        break;
-                    case decoration::RESIZE_TOP: break;
-                    case decoration::RESIZE_RIGHT:
-                        w->width += dx;
-                        d.reposition(dx, 0);
-                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
-                        w->inhibit_motion = true;
-                        break;
-                    case decoration::RESIZE_BUTTOM: break;
-                    case decoration::RESIZE_UPPERLEFT: break;
-                    case decoration::RESIZE_UPPERRIGHT: break;
-                    case decoration::RESIZE_LOWERRIGHT: break;
-                    case decoration::RESIZE_LOWERLEFT: break;
-                    }
-                }
-            }
-        } // inhibit
-        else {
-            std::cout << "ignoring: " << dx << " " << dy << std::endl;
-            w->inhibit_motion = false;
-        }
-    }
+//    if(w->button_pressed) {
+//        if(!w->inhibit_motion) {
+//            for(int i = 0; i<w->decorations.size(); i++) {
+//                auto &d = w->decorations[i];
+//                if(d.surface==w->current_surface) {
+//                    std::cout << "old: " << w->lastx << " " << w->lasty << std::endl;
+//                    std::cout << "new: " << curx << " " << cury << std::endl;
+//                    std::cout << "resizing: " << dx << " " << dy << std::endl;
+//                    switch(w->decorations[i].function) {
+//                    case decoration::RESIZE_LEFT:
+//                        w->width -= dx;
+//                        d.reposition(dx, 0);
+//                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
+//                        w->inhibit_motion = true;
+//                        break;
+//                    case decoration::RESIZE_TOP: break;
+//                    case decoration::RESIZE_RIGHT:
+//                        w->width += dx;
+//                        d.reposition(dx, 0);
+//                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
+//                        w->inhibit_motion = true;
+//                        break;
+//                    case decoration::RESIZE_BUTTOM: break;
+//                    case decoration::RESIZE_UPPERLEFT: break;
+//                    case decoration::RESIZE_UPPERRIGHT: break;
+//                    case decoration::RESIZE_LOWERRIGHT: break;
+//                    case decoration::RESIZE_LOWERLEFT: break;
+//                    }
+//                }
+//            }
+//        } // inhibit
+//        else {
+//            std::cout << "ignoring: " << dx << " " << dy << std::endl;
+//            w->inhibit_motion = false;
+//        }
+//    }
     w->lastx = x;
     w->lasty = y;
 }
@@ -179,10 +181,20 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
 
     if(w->button_pressed) {
         for(int i = 0; i<w->decorations.size(); i++) {
-            if((w->decorations[i].surface==w->current_surface) &&
-               (w->decorations[i].function==decoration::MOVE))
-            {
-                wl_shell_surface_move(w->shell_surface, seat, serial);
+//            if((w->decorations[i].surface==w->current_surface) &&
+//               (w->decorations[i].function==decoration::MOVE))
+//            {
+//                wl_shell_surface_move(w->shell_surface, seat, serial);
+//            }
+            if(w->decorations[i].surface==w->current_surface) {
+                switch(w->decorations[i].function) {
+                case WL_SHELL_SURFACE_RESIZE_NONE:
+                    wl_shell_surface_move(w->shell_surface, seat, serial);
+                    break;
+                default:
+                    wl_shell_surface_resize(w->shell_surface, seat, serial, w->decorations[i].function);
+                    break;
+                }
             }
         }
     }
@@ -231,9 +243,10 @@ static void shell_surface_ping (void *data, struct wl_shell_surface *shell_surfa
     wl_shell_surface_pong (shell_surface, serial);
 }
 
-static void shell_surface_configure (void *data, struct wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
+static void shell_surface_configure(void *data, struct wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
     struct window *window = static_cast<struct window*>(data);
-//    wl_egl_window_resize (window->egl_window, width, height, 0, 0);
+//    std::cout << "config " << edges << " " << width << " " << height << std::endl;
+    wl_egl_window_resize(window->egl_window, width-20, height-10, 0, 0);
 }
 
 static void shell_surface_popup_done (void *data, struct wl_shell_surface *shell_surface) {
@@ -267,9 +280,9 @@ static void create_window (struct window *window, int32_t width, int32_t height)
     window->egl_surface = eglCreateWindowSurface(egl_display, config, window->egl_window, NULL);
 
     // subsurface
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, width/2, -10, 20, 20, config, decoration::MOVE);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, -10, width/2, 20, 20, config, decoration::RESIZE_LEFT);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, width-10, width/2, 20, 20, config, decoration::RESIZE_RIGHT);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, width/2, -10, 20, 20, config, WL_SHELL_SURFACE_RESIZE_NONE);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, -10, width/2, 20, 20, config, WL_SHELL_SURFACE_RESIZE_LEFT);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, width-10, width/2, 20, 20, config, WL_SHELL_SURFACE_RESIZE_RIGHT);
 }
 
 static void delete_window (struct window *window) {
