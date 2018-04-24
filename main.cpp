@@ -89,7 +89,7 @@ struct decoration {
 
         surface = wl_compositor_create_surface(compositor);
         subsurface = wl_subcompositor_get_subsurface(subcompositor, surface, source);
-        wl_subsurface_set_sync(subsurface);
+        wl_subsurface_set_desync(subsurface);
         egl_display = eglGetDisplay(display);
         egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
         eglInitialize(egl_display, NULL, NULL);
@@ -119,20 +119,28 @@ struct decoration {
             w=main_w; h=border_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_LEFT:
-            x=-border_size; y=0;
-            w=border_size; h=main_h;
+            x=-border_size; y=-title_bar_size;
+            w=border_size; h=main_h+title_bar_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_TOP_LEFT:
+            x=-border_size; y=-border_size-title_bar_size;
+            w=border_size; h=border_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT:
+            x=-border_size; y=main_h;
+            w=border_size; h=border_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_RIGHT:
-            x=main_w; y=0;
-            w=border_size; h=main_h;
+            x=main_w; y=-title_bar_size;
+            w=border_size; h=main_h+title_bar_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_TOP_RIGHT:
+            x=main_w; y=-border_size-title_bar_size;
+            w=border_size; h=border_size;
             break;
         case WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT:
+            x=main_w; y=main_h;
+            w=border_size; h=border_size;
             break;
         }
     }
@@ -196,11 +204,6 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
 
     if(w->button_pressed) {
         for(int i = 0; i<w->decorations.size(); i++) {
-//            if((w->decorations[i].surface==w->current_surface) &&
-//               (w->decorations[i].function==decoration::MOVE))
-//            {
-//                wl_shell_surface_move(w->shell_surface, seat, serial);
-//            }
             if(w->decorations[i].surface==w->current_surface) {
                 switch(w->decorations[i].function) {
                 case WL_SHELL_SURFACE_RESIZE_NONE:
@@ -301,12 +304,17 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
     window->egl_surface = eglCreateWindowSurface(egl_display, config, window->egl_window, NULL);
 
     // subsurface
-    //const struct colour yellow(1,1,0,1);
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_NONE, 1,0,0,1);
+
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_LEFT, 1,1,0,1);
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_RIGHT, 1,1,0,1);
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP, 1,1,0,1);
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM, 1,1,0,1);
+
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP_LEFT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP_RIGHT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT, 0,0,1,1);
 
     window_resize(window, width, height, false);
 }
