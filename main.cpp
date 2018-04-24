@@ -32,6 +32,8 @@ struct window {
 
     int width;
     int height;
+    uint border_size;
+    uint title_size;
 
     std::vector<decoration> decorations;
 
@@ -43,6 +45,18 @@ struct window {
     bool inhibit_motion = false;
 };
 
+struct colour {
+    double r,g,b,a;
+
+//    colour() {
+//        r=1; g=1; b=1; a=1;
+//    }
+
+    colour(double r, double  g, double  b, double a) {
+        r=r; g=g; b=b; a=a;
+    }
+};
+
 struct decoration {
     struct wl_surface *surface;
     struct wl_subsurface *subsurface;
@@ -52,30 +66,26 @@ struct decoration {
     EGLDisplay egl_display;
     int posx, posy;
     int width, height;
-
-//    enum Function {
-//        MOVE,
-//        RESIZE_LEFT,
-//        RESIZE_TOP,
-//        RESIZE_RIGHT,
-//        RESIZE_BUTTOM,
-//        RESIZE_UPPERLEFT,
-//        RESIZE_UPPERRIGHT,
-//        RESIZE_LOWERRIGHT,
-//        RESIZE_LOWERLEFT,
-//    } function;
+    double r, g, b, a;
+    uint border_size;
+    uint title_bar_size;
 
     enum wl_shell_surface_resize function;
 
     decoration(wl_compositor* compositor, wl_subcompositor* subcompositor, wl_surface* source,
-              const int x, const int y, const int w, const int h,
-              EGLConfig config, enum wl_shell_surface_resize type)
+               //const int x, const int y, const int w, const int h,
+               const uint _border_size, const uint _title_bar_size,
+               EGLConfig config, enum wl_shell_surface_resize type,
+               double _r, double _g, double _b, double _a)
     {
         function = type;
-        posx = x;
-        posy = y;
-        width = w;
-        height = h;
+//        posx = x;
+//        posy = y;
+//        width = w;
+//        height = h;
+        r=_r; g=_g; b=_b; a=_a;
+        border_size = _border_size;
+        title_bar_size = _title_bar_size;
 
         surface = wl_compositor_create_surface(compositor);
         subsurface = wl_subcompositor_get_subsurface(subcompositor, surface, source);
@@ -83,8 +93,8 @@ struct decoration {
         egl_display = eglGetDisplay(display);
         egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
         eglInitialize(egl_display, NULL, NULL);
-        wl_subsurface_set_position(subsurface, x, y);
-        egl_window = wl_egl_window_create(surface, w, h);
+        wl_subsurface_set_position(subsurface, 0, 0);
+        egl_window = wl_egl_window_create(surface, 20, 20);
         egl_surface = eglCreateWindowSurface(egl_display, config, egl_window, NULL);
     }
 
@@ -93,21 +103,70 @@ struct decoration {
 //        wl_subcompositor_destroy(subcompositor);
     }
 
-    void activate() {
-        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+    void calc_dim(const int main_w, const int main_h, int &x, int &y, int &w, int &h) {
+        // get position and dimension from type and main surface
+        switch (function) {
+        case WL_SHELL_SURFACE_RESIZE_NONE:
+            x=0; y=-title_bar_size;
+            w=main_w; h=title_bar_size;
+            break;
+        case WL_SHELL_SURFACE_RESIZE_TOP:
+            x=0; y=-title_bar_size-border_size;
+            w=main_w; h=border_size;
+            break;
+        case WL_SHELL_SURFACE_RESIZE_BOTTOM:
+            x=0; y=main_h;
+            w=main_w; h=border_size;
+            break;
+        case WL_SHELL_SURFACE_RESIZE_LEFT:
+            x=-border_size; y=0;
+            w=border_size; h=main_h;
+            break;
+        case WL_SHELL_SURFACE_RESIZE_TOP_LEFT:
+            break;
+        case WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT:
+            break;
+        case WL_SHELL_SURFACE_RESIZE_RIGHT:
+            x=main_w; y=0;
+            w=border_size; h=main_h;
+            break;
+        case WL_SHELL_SURFACE_RESIZE_TOP_RIGHT:
+            break;
+        case WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT:
+            break;
+        }
     }
 
-    void swap() {
+    void resize(const int main_w, const int main_h) {
+        int x,y,w,h;
+        calc_dim(main_w, main_h, x, y, w, h);
+        wl_subsurface_set_position(subsurface, x, y);
+//        egl_window = wl_egl_window_create(surface, w, h);
+        wl_egl_window_resize(egl_window, w, h, 0, 0);
+
+    }
+
+    void draw() {
+//        wl_subsurface_set_position(subsurface, x, y);
+//        egl_window = wl_egl_window_create(surface, w, h);
+//        egl_surface = eglCreateWindowSurface(egl_display, config, egl_window, NULL);
+
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+        //glClearColor(1.0, 1.0, 0.0, 1.0);
+        glClearColor(r, g, b, a);
+        glClear(GL_COLOR_BUFFER_BIT);
         eglSwapBuffers(egl_display, egl_surface);
     }
 
-    void reposition(const int dx, const int dy) {
-        posx += dx;
-        posy += dy;
-        wl_subsurface_set_position(subsurface, posx, posy);
-        std::cout << "new pos: " << posx << " " << posy << std::endl;
-    }
+//    void reposition(const int dx, const int dy) {
+//        posx += dx;
+//        posy += dy;
+//        wl_subsurface_set_position(subsurface, posx, posy);
+//        std::cout << "new pos: " << posx << " " << posy << std::endl;
+//    }
 };
+
+void window_resize(struct window *window, const int width, const int height, bool full);
 
 // listeners
 static void pointer_enter (void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -124,51 +183,7 @@ static void pointer_leave (void *data, struct wl_pointer *pointer, uint32_t seri
 
 static void pointer_motion (void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y) {
 //    std::cout << "pointer motion " << wl_fixed_to_double(x) << " " << wl_fixed_to_double(y) << std::endl;
-    const wl_fixed_t curx = x;
-    const wl_fixed_t cury = y;
     window *w = static_cast<window*>(data);
-    const int dx = wl_fixed_to_int(curx - w->lastx);
-    const int dy = wl_fixed_to_int(cury - w->lasty);
-
-//    if(dx==0 && dy==0)
-//        return;
-
-//    if(w->button_pressed) {
-//        if(!w->inhibit_motion) {
-//            for(int i = 0; i<w->decorations.size(); i++) {
-//                auto &d = w->decorations[i];
-//                if(d.surface==w->current_surface) {
-//                    std::cout << "old: " << w->lastx << " " << w->lasty << std::endl;
-//                    std::cout << "new: " << curx << " " << cury << std::endl;
-//                    std::cout << "resizing: " << dx << " " << dy << std::endl;
-//                    switch(w->decorations[i].function) {
-//                    case decoration::RESIZE_LEFT:
-//                        w->width -= dx;
-//                        d.reposition(dx, 0);
-//                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
-//                        w->inhibit_motion = true;
-//                        break;
-//                    case decoration::RESIZE_TOP: break;
-//                    case decoration::RESIZE_RIGHT:
-//                        w->width += dx;
-//                        d.reposition(dx, 0);
-//                        wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
-//                        w->inhibit_motion = true;
-//                        break;
-//                    case decoration::RESIZE_BUTTOM: break;
-//                    case decoration::RESIZE_UPPERLEFT: break;
-//                    case decoration::RESIZE_UPPERRIGHT: break;
-//                    case decoration::RESIZE_LOWERRIGHT: break;
-//                    case decoration::RESIZE_LOWERLEFT: break;
-//                    }
-//                }
-//            }
-//        } // inhibit
-//        else {
-//            std::cout << "ignoring: " << dx << " " << dy << std::endl;
-//            w->inhibit_motion = false;
-//        }
-//    }
     w->lastx = x;
     w->lasty = y;
 }
@@ -246,7 +261,8 @@ static void shell_surface_ping (void *data, struct wl_shell_surface *shell_surfa
 static void shell_surface_configure(void *data, struct wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
     struct window *window = static_cast<struct window*>(data);
 //    std::cout << "config " << edges << " " << width << " " << height << std::endl;
-    wl_egl_window_resize(window->egl_window, width-20, height-10, 0, 0);
+//    wl_egl_window_resize(window->egl_window, width-20, height-10, 0, 0);
+    window_resize(window, width, height, true);
 }
 
 static void shell_surface_popup_done (void *data, struct wl_shell_surface *shell_surface) {
@@ -256,13 +272,16 @@ static void shell_surface_popup_done (void *data, struct wl_shell_surface *shell
 static struct wl_shell_surface_listener shell_surface_listener = {&shell_surface_ping, &shell_surface_configure, &shell_surface_popup_done};
 
 
-static void create_window (struct window *window, int32_t width, int32_t height) {
+static void create_window(struct window *window, int32_t width, int32_t height) {
+    const uint border_size = 10;
+    const uint title_size = 20;
     eglBindAPI (EGL_OPENGL_API);
     EGLint attributes[] = {
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
-    EGL_NONE};
+//        EGL_ALPHA_SIZE, 8,
+        EGL_NONE};
     EGLConfig config;
     EGLint num_config;
     eglChooseConfig(egl_display, attributes, &config, 1, &num_config);
@@ -270,6 +289,8 @@ static void create_window (struct window *window, int32_t width, int32_t height)
 
     window->width = width;
     window->height = height;
+    window->border_size = border_size;
+    window->title_size = title_size;
 
     window->surface = wl_compositor_create_surface (compositor);
     window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
@@ -280,9 +301,14 @@ static void create_window (struct window *window, int32_t width, int32_t height)
     window->egl_surface = eglCreateWindowSurface(egl_display, config, window->egl_window, NULL);
 
     // subsurface
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, width/2, -10, 20, 20, config, WL_SHELL_SURFACE_RESIZE_NONE);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, -10, width/2, 20, 20, config, WL_SHELL_SURFACE_RESIZE_LEFT);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, width-10, width/2, 20, 20, config, WL_SHELL_SURFACE_RESIZE_RIGHT);
+    //const struct colour yellow(1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_NONE, 1,0,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_LEFT, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_RIGHT, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM, 1,1,0,1);
+
+    window_resize(window, width, height, false);
 }
 
 static void delete_window (struct window *window) {
@@ -293,18 +319,37 @@ static void delete_window (struct window *window) {
     eglDestroyContext (egl_display, window->egl_context);
 }
 
-static void draw_window (struct window *window) {
-    eglMakeCurrent (egl_display, window->egl_surface, window->egl_surface, window->egl_context);
-    glClearColor (0.0, 1.0, 0.0, 1.0);
-    glClear (GL_COLOR_BUFFER_BIT);
-    eglSwapBuffers (egl_display, window->egl_surface);
+void window_resize(struct window *window, const int width, const int height, bool full) {
+//    std::cout << "config " << width << " " << height << std::endl;
+    // main surface with from full surface
+    int main_w, main_h;
+    if(full) {
+        main_w = width-2*window->border_size;
+        main_h = height-2*window->border_size-window->title_size;
+//        std::cout << "new size " << main_w << " " << main_h << std::endl;
+    }
+    else {
+        main_w = width;
+        main_h = height;
+    }
+
+    // resize main surface
+    wl_egl_window_resize(window->egl_window, main_w, main_h, 0, 0);
+
+    // draw all decoration elements
+    for(auto &d : window->decorations) { d.resize(main_w, main_h); }
+}
+
+static void draw_window(struct window *window) {
+    eglMakeCurrent(egl_display, window->egl_surface, window->egl_surface, window->egl_context);
+    glClearColor(0.0, 1.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    eglSwapBuffers(egl_display, window->egl_surface);
 
     // draw all decoration elements
     for(auto &d : window->decorations) {
-        d.activate();
-        glClearColor (1.0, 1.0, 0.0, 1.0);
-        glClear (GL_COLOR_BUFFER_BIT);
-        d.swap();
+//        d.resize(window->width, window->height);
+        d.draw();
     }
 }
 
