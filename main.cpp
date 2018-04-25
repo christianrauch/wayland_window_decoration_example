@@ -49,8 +49,6 @@ struct decoration {
     EGLSurface egl_surface;
     EGLContext egl_context;
     EGLDisplay egl_display;
-    int posx, posy;
-    int width, height;
     double r, g, b, a;
     uint border_size;
     uint title_bar_size;
@@ -58,7 +56,6 @@ struct decoration {
     enum wl_shell_surface_resize function;
 
     decoration(wl_compositor* compositor, wl_subcompositor* subcompositor, wl_surface* source,
-               //const int x, const int y, const int w, const int h,
                const uint _border_size, const uint _title_bar_size,
                EGLConfig config, enum wl_shell_surface_resize type,
                double _r, double _g, double _b, double _a)
@@ -75,7 +72,7 @@ struct decoration {
         egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
         eglInitialize(egl_display, NULL, NULL);
         wl_subsurface_set_position(subsurface, 0, 0);
-        egl_window = wl_egl_window_create(surface, 20, 20);
+        egl_window = wl_egl_window_create(surface, 1, 1);
         egl_surface = eglCreateWindowSurface(egl_display, config, egl_window, NULL);
     }
 
@@ -353,7 +350,7 @@ void window_resize(struct window *window, const int width, const int height, boo
     // resize main surface
     wl_egl_window_resize(window->egl_window, main_w, main_h, 0, 0);
 
-    // draw all decoration elements
+    // resize all decoration elements
     for(auto &d : window->decorations) { d.resize(main_w, main_h); }
 }
 
@@ -364,10 +361,7 @@ static void draw_window(struct window *window) {
     eglSwapBuffers(egl_display, window->egl_surface);
 
     // draw all decoration elements
-    for(auto &d : window->decorations) {
-//        d.resize(window->width, window->height);
-        d.draw();
-    }
+    for(auto &d : window->decorations) { d.draw(); }
 }
 
 int main() {
@@ -376,6 +370,10 @@ int main() {
     struct window window;
 
     display = wl_display_connect(NULL);
+    if(!display) {
+        std::cerr << "cannot connect to Wayland server" << std::endl;
+        return EXIT_FAILURE;
+    }
     struct wl_registry *registry = wl_display_get_registry(display);
     wl_registry_add_listener(registry, &registry_listener, &window);
     wl_display_roundtrip(display);
