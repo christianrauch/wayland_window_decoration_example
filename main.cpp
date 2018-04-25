@@ -18,9 +18,11 @@ static struct wl_shm *shm = NULL;
 static struct wl_cursor_theme *cursor_theme = NULL;
 static struct wl_surface *cursor_surface = NULL;
 static EGLDisplay egl_display;
-static char running = 1;
+static bool running = true;
 
 struct decoration;
+
+struct button;
 
 struct window {
     EGLContext egl_context;
@@ -34,12 +36,53 @@ struct window {
     uint border_size;
     uint title_size;
 
+    bool maximised = false;
+
     std::vector<decoration> decorations;
+
+    std::vector<button> buttons;
 
     bool button_pressed = false;
     wl_surface * current_surface = NULL;    // last entered surface
 
     bool inhibit_motion = false;
+};
+
+struct button {
+    struct wl_surface *surface;
+    struct wl_subsurface *subsurface;
+    struct wl_egl_window *egl_window;
+    EGLSurface egl_surface;
+    EGLContext egl_context;
+    EGLDisplay egl_display;
+    double r, g, b, a;
+
+    enum type {
+        CLOSE, MAXIMISE, MINIMISE
+    } function;
+
+    button(wl_compositor* compositor, wl_subcompositor* subcompositor, wl_surface* source,
+           EGLConfig config, int32_t x, int32_t y, type fnct, double _r, double _g, double _b, double _a)
+    {
+        function = fnct;
+        r=_r; g=_g; b=_b; a=_a;
+        surface = wl_compositor_create_surface(compositor);
+        subsurface = wl_subcompositor_get_subsurface(subcompositor, surface, source);
+        wl_subsurface_set_desync(subsurface);
+        egl_display = eglGetDisplay(display);
+        egl_context = eglCreateContext (egl_display, config, EGL_NO_CONTEXT, NULL);
+        eglInitialize(egl_display, NULL, NULL);
+        wl_subsurface_set_position(subsurface, x, y);
+        egl_window = wl_egl_window_create(surface, 10, 8);
+        egl_surface = eglCreateWindowSurface(egl_display, config, egl_window, NULL);
+    }
+
+    void draw() const {
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+        glClearColor(r, g, b, a);
+        glClear(GL_COLOR_BUFFER_BIT);
+        eglSwapBuffers(egl_display, egl_surface);
+    }
 };
 
 struct decoration {
@@ -132,7 +175,7 @@ struct decoration {
 
     }
 
-    void draw() {
+    void draw() const {
         eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
         //glClearColor(1.0, 1.0, 0.0, 1.0);
         glClearColor(r, g, b, a);
@@ -170,14 +213,6 @@ static void pointer_enter (void *data, struct wl_pointer *pointer, uint32_t seri
         }
     }
 
-//    for(int i = 0; i<w->decorations.size(); i++) {
-//        if(w->decorations[i].surface==surface) {
-//            //
-//        }
-//    }
-
-
-
     const auto image = wl_cursor_theme_get_cursor(cursor_theme, cursor.c_str())->images[0];
     wl_pointer_set_cursor(pointer, serial, cursor_surface, image->hotspot_x, image->hotspot_y);
     wl_surface_attach(cursor_surface, wl_cursor_image_get_buffer(image), 0, 0);
@@ -209,6 +244,31 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
                     break;
                 default:
                     wl_shell_surface_resize(w->shell_surface, seat, serial, w->decorations[i].function);
+                    break;
+                }
+            }
+        }
+
+        for(const struct button &b: w->buttons) {
+            if(b.surface==w->current_surface) {
+                switch (b.function) {
+                case button::type::CLOSE:
+                    running = false;
+                    break;
+                case button::type::MAXIMISE:
+                    if(w->maximised) {
+                        wl_shell_surface_set_toplevel(w->shell_surface);
+                        window_resize(w, w->width, w->height, false);
+                    }
+                    else {
+                        // store original window size
+                        wl_egl_window_get_attached_size(w->egl_window, &w->width, &w->height);
+                        wl_shell_surface_set_maximized(w->shell_surface, NULL);
+                    }
+                    w->maximised = !w->maximised;
+                    break;
+                case button::type::MINIMISE:
+                    std::cout << "not implemented: minimise" << std::endl;
                     break;
                 }
             }
@@ -318,6 +378,10 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT, 0,0,1,1);
     window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT, 0,0,1,1);
 
+    window->buttons.emplace_back(compositor, subcompositor, window->decorations[0].surface, config, 5, 4, button::type::CLOSE, 0,0,0,1);
+    window->buttons.emplace_back(compositor, subcompositor, window->decorations[0].surface, config, 20, 4, button::type::MAXIMISE, 0.5,0.5,0.5,1);
+    window->buttons.emplace_back(compositor, subcompositor, window->decorations[0].surface, config, 35, 4, button::type::MINIMISE, 1,1,1,1);
+
     window_resize(window, width, height, false);
 }
 
@@ -344,8 +408,8 @@ void window_resize(struct window *window, const int width, const int height, boo
     }
 
     // set minimum size
-    main_w = std::max(main_w, 30);
-    main_h = std::max(main_h, 30);
+    main_w = std::max(main_w, 50);
+    main_h = std::max(main_h, 50);
 
     // resize main surface
     wl_egl_window_resize(window->egl_window, main_w, main_h, 0, 0);
@@ -361,7 +425,9 @@ static void draw_window(struct window *window) {
     eglSwapBuffers(egl_display, window->egl_surface);
 
     // draw all decoration elements
-    for(auto &d : window->decorations) { d.draw(); }
+    for(const decoration &d : window->decorations) { d.draw(); }
+
+    for(const button &b : window->buttons) { b.draw(); }
 }
 
 int main() {
