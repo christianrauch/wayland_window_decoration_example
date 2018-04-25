@@ -1,12 +1,13 @@
 #include <iostream>
 #include <wayland-client.h>
 #include <wayland-egl.h>
+#include <wayland-cursor.h>
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <cstring>
 #include <linux/input.h>
-
 #include <vector>
+#include <map>
 
 /// Wayland surfaces
 
@@ -18,6 +19,9 @@ static struct wl_compositor *compositor = NULL;
 static struct wl_subcompositor *subcompositor = NULL;
 static struct wl_shell *shell = NULL;
 static struct wl_seat *seat = NULL;
+static struct wl_shm *shm = NULL;
+static struct wl_cursor_theme *cursor_theme = NULL;
+static struct wl_surface *cursor_surface = NULL;
 static EGLDisplay egl_display;
 static char running = 1;
 
@@ -39,22 +43,8 @@ struct window {
 
     bool button_pressed = false;
     wl_surface * current_surface = NULL;    // last entered surface
-    wl_fixed_t lastx;
-    wl_fixed_t lasty;
 
     bool inhibit_motion = false;
-};
-
-struct colour {
-    double r,g,b,a;
-
-//    colour() {
-//        r=1; g=1; b=1; a=1;
-//    }
-
-    colour(double r, double  g, double  b, double a) {
-        r=r; g=g; b=b; a=a;
-    }
 };
 
 struct decoration {
@@ -79,10 +69,6 @@ struct decoration {
                double _r, double _g, double _b, double _a)
     {
         function = type;
-//        posx = x;
-//        posy = y;
-//        width = w;
-//        height = h;
         r=_r; g=_g; b=_b; a=_a;
         border_size = _border_size;
         title_bar_size = _title_bar_size;
@@ -155,23 +141,24 @@ struct decoration {
     }
 
     void draw() {
-//        wl_subsurface_set_position(subsurface, x, y);
-//        egl_window = wl_egl_window_create(surface, w, h);
-//        egl_surface = eglCreateWindowSurface(egl_display, config, egl_window, NULL);
-
         eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
         //glClearColor(1.0, 1.0, 0.0, 1.0);
         glClearColor(r, g, b, a);
         glClear(GL_COLOR_BUFFER_BIT);
         eglSwapBuffers(egl_display, egl_surface);
     }
+};
 
-//    void reposition(const int dx, const int dy) {
-//        posx += dx;
-//        posy += dy;
-//        wl_subsurface_set_position(subsurface, posx, posy);
-//        std::cout << "new pos: " << posx << " " << posy << std::endl;
-//    }
+static const std::map<enum wl_shell_surface_resize, std::string> resize_cursor = {
+    {WL_SHELL_SURFACE_RESIZE_NONE, "grabbing"},
+    {WL_SHELL_SURFACE_RESIZE_TOP, "top_side"},
+    {WL_SHELL_SURFACE_RESIZE_BOTTOM, "bottom_side"},
+    {WL_SHELL_SURFACE_RESIZE_LEFT, "left_side"},
+    {WL_SHELL_SURFACE_RESIZE_TOP_LEFT, "top_left_corner"},
+    {WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT, "bottom_left_corner"},
+    {WL_SHELL_SURFACE_RESIZE_RIGHT, "right_side"},
+    {WL_SHELL_SURFACE_RESIZE_TOP_RIGHT, "top_right_corner"},
+    {WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT, "bottom_right_corner"}
 };
 
 void window_resize(struct window *window, const int width, const int height, bool full);
@@ -180,8 +167,30 @@ void window_resize(struct window *window, const int width, const int height, boo
 static void pointer_enter (void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     window *w = static_cast<window*>(data);
     w->current_surface = surface;
-    w->lastx = surface_x;
-    w->lasty = surface_y;
+
+    std::string cursor = "left_ptr";
+
+    for(const decoration &d: w->decorations) {
+        if(d.surface==surface) {
+            if(resize_cursor.count(d.function)) {
+                cursor = resize_cursor.at(d.function);
+            }
+        }
+    }
+
+//    for(int i = 0; i<w->decorations.size(); i++) {
+//        if(w->decorations[i].surface==surface) {
+//            //
+//        }
+//    }
+
+
+
+    const auto image = wl_cursor_theme_get_cursor(cursor_theme, cursor.c_str())->images[0];
+    wl_pointer_set_cursor(pointer, serial, cursor_surface, image->hotspot_x, image->hotspot_y);
+    wl_surface_attach(cursor_surface, wl_cursor_image_get_buffer(image), 0, 0);
+    wl_surface_damage(cursor_surface, 0, 0, image->width, image->height);
+    wl_surface_commit(cursor_surface);
 }
 
 static void pointer_leave (void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface) {
@@ -191,9 +200,6 @@ static void pointer_leave (void *data, struct wl_pointer *pointer, uint32_t seri
 
 static void pointer_motion (void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y) {
 //    std::cout << "pointer motion " << wl_fixed_to_double(x) << " " << wl_fixed_to_double(y) << std::endl;
-    window *w = static_cast<window*>(data);
-    w->lastx = x;
-    w->lasty = y;
 }
 
 static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
@@ -227,6 +233,7 @@ static void seat_capabilities (void *data, struct wl_seat *seat, uint32_t capabi
     if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
         struct wl_pointer *pointer = wl_seat_get_pointer (seat);
         wl_pointer_add_listener (pointer, &pointer_listener, data);
+        cursor_surface = wl_compositor_create_surface(compositor);
     }
 //    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
 //        struct wl_keyboard *keyboard = wl_seat_get_keyboard (seat);
@@ -248,6 +255,10 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
     else if (!strcmp(interface,"wl_seat")) {
         seat = static_cast<wl_seat*>(wl_registry_bind (registry, name, &wl_seat_interface, 1));
         wl_seat_add_listener (seat, &seat_listener, data);
+    }
+    else if (strcmp(interface, "wl_shm") == 0) {
+        shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, version));
+        cursor_theme = wl_cursor_theme_load(nullptr, 32, shm);
     }
 }
 
@@ -276,8 +287,8 @@ static struct wl_shell_surface_listener shell_surface_listener = {&shell_surface
 
 
 static void create_window(struct window *window, int32_t width, int32_t height) {
-    const uint border_size = 10;
-    const uint title_size = 20;
+    const uint border_size = 5;
+    const uint title_size = 15;
     eglBindAPI (EGL_OPENGL_API);
     EGLint attributes[] = {
         EGL_RED_SIZE, 8,

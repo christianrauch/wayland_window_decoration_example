@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 11)
 
 find_package(PkgConfig)
 pkg_check_modules(wayland-client REQUIRED wayland-client)
+pkg_check_modules(wayland-cursor REQUIRED wayland-cursor)
 pkg_check_modules(wayland-egl REQUIRED wayland-egl)
 pkg_check_modules(egl REQUIRED egl)
 pkg_check_modules(gl REQUIRED gl)
@@ -12,6 +13,7 @@ pkg_check_modules(gl REQUIRED gl)
 add_executable(${PROJECT_NAME} "main.cpp")
 target_link_libraries(${PROJECT_NAME}
     ${wayland-client_LIBRARIES}
+    ${wayland-cursor_LIBRARIES}
     ${wayland-egl_LIBRARIES}
     ${egl_LIBRARIES}
     ${gl_LIBRARIES}
