@@ -9,11 +9,6 @@
 #include <vector>
 #include <map>
 
-/// Wayland surfaces
-
-#define WIDTH 256
-#define HEIGHT 256
-
 static struct wl_display *display;
 static struct wl_compositor *compositor = NULL;
 static struct wl_subcompositor *subcompositor = NULL;
@@ -203,7 +198,7 @@ static void pointer_motion (void *data, struct wl_pointer *pointer, uint32_t tim
 }
 
 static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
-    std::cout << "pointer button " << button << ", state " << state << std::endl;
+//    std::cout << "pointer button " << button << ", state " << state << std::endl;
 
     window *w = static_cast<window*>(data);
     w->button_pressed = (button==BTN_LEFT) && (state==WL_POINTER_BUTTON_STATE_PRESSED);
@@ -275,7 +270,6 @@ static void shell_surface_ping (void *data, struct wl_shell_surface *shell_surfa
 static void shell_surface_configure(void *data, struct wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
     struct window *window = static_cast<struct window*>(data);
 //    std::cout << "config " << edges << " " << width << " " << height << std::endl;
-//    wl_egl_window_resize(window->egl_window, width-20, height-10, 0, 0);
     window_resize(window, width, height, true);
 }
 
@@ -352,6 +346,10 @@ void window_resize(struct window *window, const int width, const int height, boo
         main_h = height;
     }
 
+    // set minimum size
+    main_w = std::max(main_w, 30);
+    main_h = std::max(main_h, 30);
+
     // resize main surface
     wl_egl_window_resize(window->egl_window, main_w, main_h, 0, 0);
 
@@ -385,7 +383,7 @@ int main() {
     egl_display = eglGetDisplay (display);
     eglInitialize(egl_display, NULL, NULL);
 
-    create_window(&window, WIDTH, HEIGHT);
+    create_window(&window, 256, 256);
 
     while (running) {
         wl_display_dispatch_pending (display);
