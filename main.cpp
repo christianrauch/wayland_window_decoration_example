@@ -2,6 +2,7 @@
 #include <wayland-client.h>
 #include <wayland-egl.h>
 #include <wayland-cursor.h>
+#include <wayland-xdg-shell-client-protocol.h>
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <cstring>
@@ -13,6 +14,7 @@ static struct wl_display *display;
 static struct wl_compositor *compositor = NULL;
 static struct wl_subcompositor *subcompositor = NULL;
 static struct wl_shell *shell = NULL;
+static struct xdg_wm_base *xdg_wm_base = NULL;
 static struct wl_seat *seat = NULL;
 static struct wl_shm *shm = NULL;
 static struct wl_cursor_theme *cursor_theme = NULL;
@@ -28,6 +30,8 @@ struct window {
     EGLContext egl_context;
     struct wl_surface *surface;
     struct wl_shell_surface *shell_surface;
+    struct xdg_surface *xdg_surface;
+    struct xdg_toplevel *xdg_toplevel = NULL;
     struct wl_egl_window *egl_window;
     EGLSurface egl_surface;
 
@@ -199,6 +203,32 @@ static const std::map<enum wl_shell_surface_resize, std::string> resize_cursor =
 void window_resize(struct window *window, const int width, const int height, bool full);
 
 // listeners
+
+static void xdg_surface_handle_configure(void *data,
+        struct xdg_surface *xdg_surface, uint32_t serial) {
+    xdg_surface_ack_configure(xdg_surface, serial);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = xdg_surface_handle_configure,
+};
+
+void xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
+    if (width==0 || height==0)
+        return;
+    struct window *window = static_cast<struct window*>(data);
+    window_resize(window, width, height, true);
+}
+
+static void xdg_toplevel_handle_close(void *data, struct xdg_toplevel *xdg_toplevel) {
+    running = false;
+}
+
+static const struct xdg_toplevel_listener xdg_toplevel_listener = {
+    .configure = xdg_toplevel_handle_configure,
+    .close = xdg_toplevel_handle_close,
+};
+
 static void pointer_enter (void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     window *w = static_cast<window*>(data);
     w->current_surface = surface;
@@ -240,10 +270,18 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
             if(w->decorations[i].surface==w->current_surface) {
                 switch(w->decorations[i].function) {
                 case WL_SHELL_SURFACE_RESIZE_NONE:
-                    wl_shell_surface_move(w->shell_surface, seat, serial);
+                    if(w->xdg_toplevel) {
+                        xdg_toplevel_move(w->xdg_toplevel, seat, serial);
+                    } else if(w->shell_surface) {
+                        wl_shell_surface_move(w->shell_surface, seat, serial);
+                    }
                     break;
                 default:
-                    wl_shell_surface_resize(w->shell_surface, seat, serial, w->decorations[i].function);
+                    if(w->xdg_toplevel) {
+                        xdg_toplevel_resize(w->xdg_toplevel, seat, serial, w->decorations[i].function);
+                    } else if(w->shell_surface) {
+                        wl_shell_surface_resize(w->shell_surface, seat, serial, w->decorations[i].function);
+                    }
                     break;
                 }
             }
@@ -312,6 +350,10 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
         shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, version));
         cursor_theme = wl_cursor_theme_load(nullptr, 32, shm);
     }
+    else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+        std::cout << "have " << xdg_wm_base_interface.name << std::endl;
+        xdg_wm_base = static_cast<struct xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, version));
+    }
 }
 
 static void registry_remove_object (void *data, struct wl_registry *registry, uint32_t name) {
@@ -358,10 +400,24 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
     window->title_size = title_size;
 
     window->surface = wl_compositor_create_surface (compositor);
-    window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
-    wl_shell_surface_add_listener(window->shell_surface, &shell_surface_listener, window);
-    wl_shell_surface_set_toplevel(window->shell_surface);
-    wl_shell_surface_set_title(window->shell_surface, "example");
+
+    if(xdg_wm_base) {
+        window->xdg_surface = xdg_wm_base_get_xdg_surface(xdg_wm_base, window->surface);
+        window->xdg_toplevel = xdg_surface_get_toplevel(window->xdg_surface);
+        xdg_surface_add_listener(window->xdg_surface, &xdg_surface_listener, window);
+        xdg_toplevel_add_listener(window->xdg_toplevel, &xdg_toplevel_listener, window);
+        xdg_toplevel_set_title(window->xdg_toplevel, "example");
+    }
+    else if(shell) {
+        window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
+        wl_shell_surface_add_listener(window->shell_surface, &shell_surface_listener, window);
+        wl_shell_surface_set_toplevel(window->shell_surface);
+        wl_shell_surface_set_title(window->shell_surface, "example");
+    }
+    else {
+        std::cout << "no xdg_wm_base, no wl_shell" << std::endl;
+    }
+
     window->egl_window = wl_egl_window_create(window->surface, width, height);
     window->egl_surface = eglCreateWindowSurface(egl_display, config, window->egl_window, NULL);
 
@@ -389,6 +445,10 @@ static void delete_window (struct window *window) {
     eglDestroySurface (egl_display, window->egl_surface);
     wl_egl_window_destroy (window->egl_window);
     wl_shell_surface_destroy (window->shell_surface);
+    if(xdg_wm_base) {
+        xdg_toplevel_destroy(window->xdg_toplevel);
+        xdg_surface_destroy(window->xdg_surface);
+    }
     wl_surface_destroy (window->surface);
     eglDestroyContext (egl_display, window->egl_context);
 }
