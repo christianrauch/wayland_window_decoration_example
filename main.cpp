@@ -229,6 +229,14 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .close = xdg_toplevel_handle_close,
 };
 
+void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) {
+    xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+static const struct xdg_wm_base_listener xdg_wm_base_listener {
+    .ping = xdg_wm_base_ping
+};
+
 static void pointer_enter (void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     window *w = static_cast<window*>(data);
     w->current_surface = surface;
@@ -295,18 +303,33 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
                     break;
                 case button::type::MAXIMISE:
                     if(w->maximised) {
-                        wl_shell_surface_set_toplevel(w->shell_surface);
-                        window_resize(w, w->width, w->height, false);
+                        if(w->xdg_toplevel) {
+                            xdg_toplevel_unset_maximized(w->xdg_toplevel);
+                        }
+                        else if(w->shell_surface) {
+                            wl_shell_surface_set_toplevel(w->shell_surface);
+                            window_resize(w, w->width, w->height, false);
+                        }
                     }
                     else {
                         // store original window size
-                        wl_egl_window_get_attached_size(w->egl_window, &w->width, &w->height);
-                        wl_shell_surface_set_maximized(w->shell_surface, NULL);
+//                        wl_egl_window_get_attached_size(w->egl_window, &w->width, &w->height);
+                        if(w->xdg_toplevel) {
+                            xdg_toplevel_set_maximized(w->xdg_toplevel);
+                        }
+                        else if(w->shell_surface) {
+                            wl_shell_surface_set_maximized(w->shell_surface, NULL);
+                        }
                     }
                     w->maximised = !w->maximised;
                     break;
                 case button::type::MINIMISE:
-                    std::cout << "not implemented: minimise" << std::endl;
+                    if(w->xdg_toplevel) {
+                        xdg_toplevel_set_minimized(w->xdg_toplevel);
+                    }
+                    else if(w->shell_surface) {
+                        std::cerr << "not implemented: minimise" << std::endl;
+                    }
                     break;
                 }
             }
@@ -406,7 +429,9 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
         window->xdg_toplevel = xdg_surface_get_toplevel(window->xdg_surface);
         xdg_surface_add_listener(window->xdg_surface, &xdg_surface_listener, window);
         xdg_toplevel_add_listener(window->xdg_toplevel, &xdg_toplevel_listener, window);
+        xdg_wm_base_add_listener(xdg_wm_base, &xdg_wm_base_listener, window);
         xdg_toplevel_set_title(window->xdg_toplevel, "example");
+        xdg_toplevel_set_app_id(window->xdg_toplevel, "example");
     }
     else if(shell) {
         window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
