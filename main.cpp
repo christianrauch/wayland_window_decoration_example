@@ -410,7 +410,7 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
-//        EGL_ALPHA_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
         EGL_NONE};
     EGLConfig config;
     EGLint num_config;
