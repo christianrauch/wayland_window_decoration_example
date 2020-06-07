@@ -13,7 +13,6 @@
 static struct wl_display *display;
 static struct wl_compositor *compositor = NULL;
 static struct wl_subcompositor *subcompositor = NULL;
-static struct wl_shell *shell = NULL;
 static struct xdg_wm_base *xdg_wm_base = NULL;
 static struct wl_seat *seat = NULL;
 static struct wl_shm *shm = NULL;
@@ -29,7 +28,6 @@ struct button;
 struct window {
     EGLContext egl_context;
     struct wl_surface *surface;
-    struct wl_shell_surface *shell_surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel = NULL;
     struct wl_egl_window *egl_window;
@@ -100,11 +98,11 @@ struct decoration {
     uint border_size;
     uint title_bar_size;
 
-    enum wl_shell_surface_resize function;
+    enum xdg_toplevel_resize_edge function;
 
     decoration(wl_compositor* compositor, wl_subcompositor* subcompositor, wl_surface* source,
                const uint _border_size, const uint _title_bar_size,
-               EGLConfig config, enum wl_shell_surface_resize type,
+               EGLConfig config, enum xdg_toplevel_resize_edge type,
                double _r, double _g, double _b, double _a)
     {
         function = type;
@@ -131,39 +129,39 @@ struct decoration {
     void calc_dim(const int main_w, const int main_h, int &x, int &y, int &w, int &h) {
         // get position and dimension from type and main surface
         switch (function) {
-        case WL_SHELL_SURFACE_RESIZE_NONE:
+        case XDG_TOPLEVEL_RESIZE_EDGE_NONE:
             x=0; y=-title_bar_size;
             w=main_w; h=title_bar_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_TOP:
+        case XDG_TOPLEVEL_RESIZE_EDGE_TOP:
             x=0; y=-title_bar_size-border_size;
             w=main_w; h=border_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_BOTTOM:
+        case XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM:
             x=0; y=main_h;
             w=main_w; h=border_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_LEFT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_LEFT:
             x=-border_size; y=-title_bar_size;
             w=border_size; h=main_h+title_bar_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_TOP_LEFT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT:
             x=-border_size; y=-border_size-title_bar_size;
             w=border_size; h=border_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT:
             x=-border_size; y=main_h;
             w=border_size; h=border_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_RIGHT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_RIGHT:
             x=main_w; y=-title_bar_size;
             w=border_size; h=main_h+title_bar_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_TOP_RIGHT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT:
             x=main_w; y=-border_size-title_bar_size;
             w=border_size; h=border_size;
             break;
-        case WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT:
+        case XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT:
             x=main_w; y=main_h;
             w=border_size; h=border_size;
             break;
@@ -188,16 +186,16 @@ struct decoration {
     }
 };
 
-static const std::map<enum wl_shell_surface_resize, std::string> resize_cursor = {
-    {WL_SHELL_SURFACE_RESIZE_NONE, "grabbing"},
-    {WL_SHELL_SURFACE_RESIZE_TOP, "top_side"},
-    {WL_SHELL_SURFACE_RESIZE_BOTTOM, "bottom_side"},
-    {WL_SHELL_SURFACE_RESIZE_LEFT, "left_side"},
-    {WL_SHELL_SURFACE_RESIZE_TOP_LEFT, "top_left_corner"},
-    {WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT, "bottom_left_corner"},
-    {WL_SHELL_SURFACE_RESIZE_RIGHT, "right_side"},
-    {WL_SHELL_SURFACE_RESIZE_TOP_RIGHT, "top_right_corner"},
-    {WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT, "bottom_right_corner"}
+static const std::map<enum xdg_toplevel_resize_edge, std::string> resize_cursor = {
+    {XDG_TOPLEVEL_RESIZE_EDGE_NONE, "grabbing"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_TOP, "top_side"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM, "bottom_side"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_LEFT, "left_side"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT, "top_left_corner"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT, "bottom_left_corner"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_RIGHT, "right_side"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT, "top_right_corner"},
+    {XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT, "bottom_right_corner"}
 };
 
 void window_resize(struct window *window, const int width, const int height, bool full);
@@ -277,18 +275,14 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
         for(int i = 0; i<w->decorations.size(); i++) {
             if(w->decorations[i].surface==w->current_surface) {
                 switch(w->decorations[i].function) {
-                case WL_SHELL_SURFACE_RESIZE_NONE:
+                case XDG_TOPLEVEL_RESIZE_EDGE_NONE:
                     if(w->xdg_toplevel) {
                         xdg_toplevel_move(w->xdg_toplevel, seat, serial);
-                    } else if(w->shell_surface) {
-                        wl_shell_surface_move(w->shell_surface, seat, serial);
                     }
                     break;
                 default:
                     if(w->xdg_toplevel) {
                         xdg_toplevel_resize(w->xdg_toplevel, seat, serial, w->decorations[i].function);
-                    } else if(w->shell_surface) {
-                        wl_shell_surface_resize(w->shell_surface, seat, serial, w->decorations[i].function);
                     }
                     break;
                 }
@@ -306,10 +300,6 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
                         if(w->xdg_toplevel) {
                             xdg_toplevel_unset_maximized(w->xdg_toplevel);
                         }
-                        else if(w->shell_surface) {
-                            wl_shell_surface_set_toplevel(w->shell_surface);
-                            window_resize(w, w->width, w->height, false);
-                        }
                     }
                     else {
                         // store original window size
@@ -317,18 +307,12 @@ static void pointer_button (void *data, struct wl_pointer *pointer, uint32_t ser
                         if(w->xdg_toplevel) {
                             xdg_toplevel_set_maximized(w->xdg_toplevel);
                         }
-                        else if(w->shell_surface) {
-                            wl_shell_surface_set_maximized(w->shell_surface, NULL);
-                        }
                     }
                     w->maximised = !w->maximised;
                     break;
                 case button::type::MINIMISE:
                     if(w->xdg_toplevel) {
                         xdg_toplevel_set_minimized(w->xdg_toplevel);
-                    }
-                    else if(w->shell_surface) {
-                        std::cerr << "not implemented: minimise" << std::endl;
                     }
                     break;
                 }
@@ -359,9 +343,6 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
     if (!strcmp(interface,"wl_compositor")) {
         compositor = static_cast<wl_compositor*>(wl_registry_bind (registry, name, &wl_compositor_interface, 1));
     }
-    else if (!strcmp(interface,"wl_shell")) {
-        shell = static_cast<wl_shell*>(wl_registry_bind (registry, name, &wl_shell_interface, 1));
-    }
     else if (strcmp(interface, "wl_subcompositor") == 0) {
         subcompositor = static_cast<wl_subcompositor*>(wl_registry_bind(registry, name, &wl_subcompositor_interface, 1));
     }
@@ -374,7 +355,6 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
         cursor_theme = wl_cursor_theme_load(nullptr, 32, shm);
     }
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
-        std::cout << "have " << xdg_wm_base_interface.name << std::endl;
         xdg_wm_base = static_cast<struct xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, version));
     }
 }
@@ -433,31 +413,25 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
         xdg_toplevel_set_title(window->xdg_toplevel, "example");
         xdg_toplevel_set_app_id(window->xdg_toplevel, "example");
     }
-    else if(shell) {
-        window->shell_surface = wl_shell_get_shell_surface (shell, window->surface);
-        wl_shell_surface_add_listener(window->shell_surface, &shell_surface_listener, window);
-        wl_shell_surface_set_toplevel(window->shell_surface);
-        wl_shell_surface_set_title(window->shell_surface, "example");
-    }
     else {
-        std::cout << "no xdg_wm_base, no wl_shell" << std::endl;
+        std::cout << "no xdg_wm_base" << std::endl;
     }
 
     window->egl_window = wl_egl_window_create(window->surface, width, height);
     window->egl_surface = eglCreateWindowSurface(egl_display, config, window->egl_window, NULL);
 
     // subsurface
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_NONE, 1,0,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_NONE, 1,0,0,1);
 
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_LEFT, 1,1,0,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_RIGHT, 1,1,0,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP, 1,1,0,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_LEFT, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_RIGHT, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_TOP, 1,1,0,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM, 1,1,0,1);
 
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP_LEFT, 0,0,1,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_TOP_RIGHT, 0,0,1,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_LEFT, 0,0,1,1);
-    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, WL_SHELL_SURFACE_RESIZE_BOTTOM_RIGHT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT, 0,0,1,1);
+    window->decorations.emplace_back(compositor, subcompositor, window->surface, border_size, title_size, config, XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT, 0,0,1,1);
 
     window->buttons.emplace_back(compositor, subcompositor, window->decorations[0].surface, config, 5, 4, button::type::CLOSE, 0,0,0,1);
     window->buttons.emplace_back(compositor, subcompositor, window->decorations[0].surface, config, 20, 4, button::type::MAXIMISE, 0.5,0.5,0.5,1);
@@ -469,7 +443,6 @@ static void create_window(struct window *window, int32_t width, int32_t height) 
 static void delete_window (struct window *window) {
     eglDestroySurface (egl_display, window->egl_surface);
     wl_egl_window_destroy (window->egl_window);
-    wl_shell_surface_destroy (window->shell_surface);
     if(xdg_wm_base) {
         xdg_toplevel_destroy(window->xdg_toplevel);
         xdg_surface_destroy(window->xdg_surface);
