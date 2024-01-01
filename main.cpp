@@ -10,6 +10,8 @@
 #include <vector>
 #include <map>
 
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+
 static struct wl_display *display;
 static struct wl_compositor *compositor = NULL;
 static struct wl_subcompositor *subcompositor = NULL;
@@ -351,11 +353,11 @@ static void registry_add_object (void *data, struct wl_registry *registry, uint3
         wl_seat_add_listener (seat, &seat_listener, data);
     }
     else if (strcmp(interface, "wl_shm") == 0) {
-        shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, version));
+        shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, 1));
         cursor_theme = wl_cursor_theme_load(nullptr, 32, shm);
     }
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
-        xdg_wm_base = static_cast<struct xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, version));
+        xdg_wm_base = static_cast<struct xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, MIN(version, 2)));
     }
 }
 
